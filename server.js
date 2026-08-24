@@ -326,7 +326,146 @@ app.post("/api/extension/validate", async (req, res) => {
     });
   }
 });
+app.get("/teste-login", (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste Biply Flow</title>
+<style>
+body{
+  font-family:Arial,sans-serif;
+  background:#07111f;
+  color:white;
+  padding:30px;
+  max-width:500px;
+  margin:auto;
+}
+input,button{
+  width:100%;
+  padding:14px;
+  margin:8px 0;
+  box-sizing:border-box;
+  border-radius:8px;
+}
+button{
+  background:#35e59a;
+  border:0;
+  font-weight:bold;
+}
+#resultado{
+  margin-top:20px;
+  white-space:pre-wrap;
+  background:#10243b;
+  padding:15px;
+  border-radius:8px;
+}
+</style>
+</head>
 
+<body>
+
+<h2>Biply Flow — Teste de Login</h2>
+
+<input
+  id="email"
+  type="email"
+  placeholder="E-mail"
+>
+
+<input
+  id="senha"
+  type="password"
+  placeholder="Senha"
+>
+
+<button onclick="entrar()">
+  TESTAR LOGIN
+</button>
+
+<div id="resultado">
+Aguardando teste...
+</div>
+
+<script>
+
+async function entrar(){
+
+  const resultado =
+    document.getElementById("resultado");
+
+  resultado.textContent =
+    "Testando login...";
+
+  try {
+
+    const login = await fetch("/api/login", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        email:
+          document.getElementById("email").value,
+        password:
+          document.getElementById("senha").value
+      })
+    });
+
+    const loginData =
+      await login.json();
+
+    if(!login.ok){
+
+      resultado.textContent =
+        "LOGIN NEGADO\\n\\n" +
+        JSON.stringify(
+          loginData,
+          null,
+          2
+        );
+
+      return;
+    }
+
+    const license =
+      await fetch("/api/license", {
+        headers:{
+          Authorization:
+            "Bearer " +
+            loginData.access_token
+        }
+      });
+
+    const licenseData =
+      await license.json();
+
+    resultado.textContent =
+      "LOGIN APROVADO\\n\\n" +
+      JSON.stringify(
+        licenseData,
+        null,
+        2
+      );
+
+  } catch(error){
+
+    resultado.textContent =
+      "ERRO:\\n" +
+      error.message;
+
+  }
+
+}
+
+</script>
+
+</body>
+</html>
+  `);
+});
 app.listen(PORT, () => {
   console.log(
     `Biply Flow online na porta ${PORT}`
