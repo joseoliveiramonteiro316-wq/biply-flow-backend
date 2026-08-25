@@ -333,12 +333,13 @@ app.post("/api/extension/validate", async (req, res) => {
 });
 
 app.get("/cliente", (req, res) => {
-  res.type("html").send(`<!doctype html>
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Biply Flow â€” Ãrea do Cliente</title>
+<title>Biply Flow â€” &Aacute;rea do Cliente</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#07111f;color:#fff}
 .wrap{width:min(520px,92%);margin:45px auto}.card{background:#10243b;border:1px solid #24425f;border-radius:18px;padding:22px}
@@ -353,7 +354,7 @@ button{border:0;background:#35e59a;color:#04101a;font-weight:800;cursor:pointer}
 <body>
 <div class="wrap"><div class="card">
 <h1>Biply Flow</h1>
-<p>Entre e mantenha esta pÃ¡gina aberta enquanto estiver usando a extensÃ£o.</p>
+<p>Entre e mantenha esta p&aacute;gina aberta enquanto estiver usando a extens&atilde;o.</p>
 
 <div id="loginBox">
 <input id="email" type="email" placeholder="E-mail" autocomplete="email">
@@ -407,16 +408,16 @@ async function heartbeat(retry=true){
  if(r.status===401&&retry&&await refresh()) return heartbeat(false);
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.authorized){
-  setStatus("Acesso nÃ£o autorizado: "+(j.reason||"erro"),"bad");
+  setStatus("Acesso n&atilde;o autorizado: "+(j.reason||"erro"),"bad");
   return;
  }
- const phase=j.phase==="grace"?"TOLERÃ‚NCIA":"ATIVO";
+ const phase=j.phase==="grace"?"TOLER&Acirc;NCIA":"ATIVO";
  const cls=j.phase==="grace"?"warn":"ok";
  setStatus(
   "SITE CONECTADO â€” "+phase+
-  "\\nPago atÃ©: "+new Date(j.paid_until).toLocaleString("pt-BR")+
-  "\\nTolerÃ¢ncia atÃ©: "+new Date(j.grace_until).toLocaleString("pt-BR")+
-  "\\n\\nMantenha esta pÃ¡gina aberta.",
+  "\\nPago at&eacute;: "+new Date(j.paid_until).toLocaleString("pt-BR")+
+  "\\nToler&acirc;ncia at&eacute;: "+new Date(j.grace_until).toLocaleString("pt-BR")+
+  "\\n\\nMantenha esta p&aacute;gina aberta.",
   cls
  );
 }
@@ -432,7 +433,7 @@ document.getElementById("login").onclick=async()=>{
  });
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.access_token){
-  setStatus("E-mail ou senha invÃ¡lidos.","bad");return;
+  setStatus("E-mail ou senha inv&aacute;lidos.","bad");return;
  }
  accessToken=j.access_token;
  refreshToken=j.refresh_token||null;
@@ -450,7 +451,7 @@ document.getElementById("logout").onclick=()=>{
  timer=null;
  onlineBox.classList.add("hidden");
  loginBox.classList.remove("hidden");
- setStatus("SessÃ£o encerrada.");
+ setStatus("Sess&atilde;o encerrada.");
 };
 </script>
 </body>
@@ -458,14 +459,16 @@ document.getElementById("logout").onclick=()=>{
 });
 
 app.get("/teste-login", (req, res) => {
-  res.type("html").send(`<!doctype html>
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teste Biply Flow</title></head><body style="font-family:Arial;padding:30px">
 <h2>Biply Flow â€” Teste de Login</h2>
-<p>A pÃ¡gina principal para uso normal agora Ã© <a href="/cliente">/cliente</a>.</p>
+<p>A p&aacute;gina principal para uso normal agora &eacute; <a href="/cliente">/cliente</a>.</p>
 </body></html>`);
 });
 
 app.listen(PORT, () => {
   console.log(`Biply Flow online na porta ${PORT}`);
 });
+
