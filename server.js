@@ -390,6 +390,51 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.post("/api/signup", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    if (!email || !password) return res.status(400).json({ success: false, error: "email_password_required" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ success: false, error: "invalid_email" });
+    if (password.length < 6) return res.status(400).json({ success: false, error: "password_too_short" });
+
+    // Cria a conta pelo backend para que o cliente apareca imediatamente no ADM,
+    // sem precisar cadastrar manualmente no painel do Supabase.
+    const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+
+    if (createError) {
+      const msg = String(createError.message || "").toLowerCase();
+      if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+        return res.status(409).json({ success: false, error: "email_already_registered" });
+      }
+      console.error("signup createUser", createError);
+      return res.status(400).json({ success: false, error: "signup_failed", details: createError.message });
+    }
+
+    // Faz o primeiro login automaticamente. A conta nasce sem licenca ativa.
+    const { data: loginData, error: loginError } = await supabasePublic.auth.signInWithPassword({ email, password });
+    if (loginError || !loginData?.session) {
+      return res.json({ success: true, created: true, user_id: created?.user?.id || null, login_required: true });
+    }
+
+    res.json({
+      success: true,
+      created: true,
+      user_id: created?.user?.id || loginData.user?.id || null,
+      access_token: loginData.session.access_token,
+      refresh_token: loginData.session.refresh_token,
+      expires_in: loginData.session.expires_in
+    });
+  } catch (error) {
+    console.error("signup", error);
+    res.status(500).json({ success: false, error: "server_error" });
+  }
+});
+
 app.post("/api/token/refresh", async (req, res) => {
   try {
     const refresh_token = String(req.body.refresh_token || "");
@@ -758,6 +803,10 @@ app.post("/api/admin/users/:id/delete", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/cadastro", (req, res) => {
+  res.redirect(302, "/cliente?modo=cadastro");
+});
+
 app.get("/cliente", (req, res) => {
   res.set("Content-Type", "text/html; charset=utf-8");
   res.send(`<!doctype html>
@@ -765,12 +814,14 @@ app.get("/cliente", (req, res) => {
 <title>Biply Flow - Area do Cliente</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#07111f;color:#fff}.wrap{width:min(560px,92%);margin:45px auto}.card{background:#10243b;border:1px solid #24425f;border-radius:18px;padding:22px}h1{margin:0 0 7px}p{color:#aec0d3;line-height:1.45}.passwordWrap{position:relative}input,button{width:100%;padding:13px;border-radius:10px;margin:7px 0;font-size:16px}input{background:#081725;color:white;border:1px solid #31536f}.passwordWrap input{padding-right:52px}.eye{position:absolute;right:8px;top:12px;width:42px;height:42px;margin:0;background:transparent;color:#d7e4f2;font-size:20px}button{border:0;background:#35e59a;color:#04101a;font-weight:800;cursor:pointer}.secondary{background:#173653;color:white}.status{margin-top:15px;padding:13px;border-radius:10px;background:#081725;white-space:pre-wrap}.ok{color:#8dffca}.bad{color:#ff9aa5}.warn{color:#ffe18b}.hidden{display:none}.plans{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}.plan{background:#081725;border:1px solid #31536f;border-radius:14px;padding:15px}.plan h3{margin:0 0 6px}.price{font-size:24px;font-weight:900;margin:6px 0}.save{color:#8dffca;font-size:13px}.pay{background:#27d3ff}</style>
 </head><body><div class="wrap"><div class="card"><h1>Biply Flow</h1><p>Entre e mantenha esta pagina aberta enquanto estiver usando a extensao.</p>
-<div id="loginBox"><input id="email" type="email" placeholder="E-mail" autocomplete="email"><div class="passwordWrap"><input id="password" type="password" placeholder="Senha" autocomplete="current-password"><button id="eye" class="eye" type="button">&#128065;</button></div><button id="login">Entrar</button></div>
+<div id="loginBox"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px"><button id="modeLogin" type="button">Entrar</button><button id="modeSignup" type="button" class="secondary">Criar conta</button></div><input id="email" type="email" placeholder="E-mail" autocomplete="email"><div class="passwordWrap"><input id="password" type="password" placeholder="Senha" autocomplete="current-password"><button id="eye" class="eye" type="button">&#128065;</button></div><div id="confirmWrap" class="passwordWrap hidden"><input id="confirmPassword" type="password" placeholder="Confirme a senha" autocomplete="new-password"></div><button id="login">Entrar</button><p id="accountHelp" style="font-size:13px;margin:5px 0 0">Ainda nao tem conta? Clique em <b>Criar conta</b>.</p></div>
 <div id="onlineBox" class="hidden"><p id="account"></p><div class="plans"><div class="plan"><h3>Plano Mensal</h3><div id="monthlyPrice" class="price">Carregando...</div><div id="monthlyDays"></div><button id="payMonthly" class="pay">PAGAR MENSAL</button></div><div class="plan"><h3>Plano Anual</h3><div id="annualPrice" class="price">Carregando...</div><div id="annualDays"></div><button id="payAnnual" class="pay">PAGAR ANUAL</button></div></div><button id="logout" class="secondary">Sair</button></div><div id="status" class="status">Aguardando login...</div></div></div>
 <script>
 let accessToken=null,refreshToken=null,timer=null;const statusEl=document.getElementById("status"),loginBox=document.getElementById("loginBox"),onlineBox=document.getElementById("onlineBox"),account=document.getElementById("account");function setStatus(text,cls=""){statusEl.className="status "+cls;statusEl.textContent=text}function brl(c){return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(c||0)/100)}async function loadSettings(){try{const r=await fetch("/api/public/settings");const j=await r.json();if(j.success){monthlyPrice.textContent=brl(j.monthly_price_cents);annualPrice.textContent=brl(j.annual_price_cents);monthlyDays.textContent=j.monthly_days+" dias de acesso";annualDays.textContent=j.annual_days+" dias de acesso"}}catch(e){}}
-loadSettings();document.getElementById("eye").onclick=()=>{const p=document.getElementById("password");p.type=p.type==="password"?"text":"password"};async function refresh(){if(!refreshToken)return false;const r=await fetch("/api/token/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:refreshToken})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.access_token)return false;accessToken=j.access_token;refreshToken=j.refresh_token||refreshToken;return true}async function heartbeat(retry=true){if(!accessToken)return;let r=await fetch("/api/session/heartbeat",{method:"POST",headers:{Authorization:"Bearer "+accessToken}});if(r.status===401&&retry&&await refresh())return heartbeat(false);const j=await r.json().catch(()=>({}));if(!r.ok||!j.authorized){setStatus("Acesso nao autorizado: "+(j.reason||"erro"),"bad");return}const phase=j.phase==="grace"?"TOLERANCIA":"ATIVO";setStatus("SITE CONECTADO - "+phase+"\\nPago ate: "+new Date(j.paid_until).toLocaleString("pt-BR")+"\\nTolerancia ate: "+new Date(j.grace_until).toLocaleString("pt-BR")+"\\n\\nMantenha esta pagina aberta.",j.phase==="grace"?"warn":"ok")}
-document.getElementById("login").onclick=async()=>{const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;setStatus("Entrando...");const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.access_token){setStatus("E-mail ou senha invalidos.","bad");return}accessToken=j.access_token;refreshToken=j.refresh_token||null;document.getElementById("password").value="";loginBox.classList.add("hidden");onlineBox.classList.remove("hidden");account.textContent=email;await heartbeat();timer=setInterval(heartbeat,30000)};async function createCheckout(plan){if(!accessToken){setStatus("Faca login primeiro.","bad");return}setStatus("Criando pagamento InfinitePay...");let r=await fetch("/api/checkout/create",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({plan})});if(r.status===401&&await refresh())r=await fetch("/api/checkout/create",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({plan})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.checkout_url){setStatus("Nao foi possivel abrir o pagamento.","bad");return}location.href=j.checkout_url}document.getElementById("payMonthly").onclick=()=>createCheckout("monthly");document.getElementById("payAnnual").onclick=()=>createCheckout("annual");document.getElementById("logout").onclick=()=>{accessToken=null;refreshToken=null;if(timer)clearInterval(timer);timer=null;onlineBox.classList.add("hidden");loginBox.classList.remove("hidden");setStatus("Sessao encerrada.")};
+loadSettings();let authMode=new URLSearchParams(location.search).get("modo")==="cadastro"?"signup":"login";const modeLogin=document.getElementById("modeLogin"),modeSignup=document.getElementById("modeSignup"),confirmWrap=document.getElementById("confirmWrap"),loginBtn=document.getElementById("login"),accountHelp=document.getElementById("accountHelp");function setAuthMode(mode){authMode=mode;const signup=mode==="signup";confirmWrap.classList.toggle("hidden",!signup);loginBtn.textContent=signup?"Criar minha conta":"Entrar";modeLogin.className=signup?"secondary":"";modeSignup.className=signup?"":"secondary";accountHelp.innerHTML=signup?"Ja possui conta? Clique em <b>Entrar</b>.":"Ainda nao tem conta? Clique em <b>Criar conta</b>.";setStatus(signup?"Crie sua conta. O acesso sera liberado apos pagamento ou ativacao pelo administrador.":"Aguardando login...")}modeLogin.onclick=()=>setAuthMode("login");modeSignup.onclick=()=>setAuthMode("signup");setAuthMode(authMode);document.getElementById("eye").onclick=()=>{const p=document.getElementById("password");p.type=p.type==="password"?"text":"password"};async function refresh(){if(!refreshToken)return false;const r=await fetch("/api/token/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:refreshToken})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.access_token)return false;accessToken=j.access_token;refreshToken=j.refresh_token||refreshToken;return true}async function heartbeat(retry=true){if(!accessToken)return;let r=await fetch("/api/session/heartbeat",{method:"POST",headers:{Authorization:"Bearer "+accessToken}});if(r.status===401&&retry&&await refresh())return heartbeat(false);const j=await r.json().catch(()=>({}));if(!r.ok||!j.authorized){setStatus("Acesso nao autorizado: "+(j.reason||"erro"),"bad");return}const phase=j.phase==="grace"?"TOLERANCIA":"ATIVO";setStatus("SITE CONECTADO - "+phase+"\\nPago ate: "+new Date(j.paid_until).toLocaleString("pt-BR")+"\\nTolerancia ate: "+new Date(j.grace_until).toLocaleString("pt-BR")+"\\n\\nMantenha esta pagina aberta.",j.phase==="grace"?"warn":"ok")}
+document.getElementById("login").onclick=async()=>{const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;if(authMode==="signup"){const confirmPassword=document.getElementById("confirmPassword").value;if(!email||!password){setStatus("Preencha e-mail e senha.","bad");return}if(password.length<6){setStatus("A senha precisa ter pelo menos 6 caracteres.","bad");return}if(password!==confirmPassword){setStatus("As senhas nao conferem.","bad");return}setStatus("Criando sua conta...");const r=await fetch("/api/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const j=await r.json().catch(()=>({}));if(!r.ok){if(j.error==="email_already_registered")setStatus("Este e-mail ja possui cadastro. Clique em Entrar.","bad");else if(j.error==="invalid_email")setStatus("Digite um e-mail valido.","bad");else setStatus("Nao foi possivel criar a conta: "+(j.details||j.error||"erro"),"bad");return}if(j.access_token){accessToken=j.access_token;refreshToken=j.refresh_token||null;document.getElementById("password").value="";document.getElementById("confirmPassword").value="";loginBox.classList.add("hidden");onlineBox.classList.remove("hidden");account.textContent=email;setStatus("Conta criada com sucesso. Seu cadastro ja esta disponivel para o administrador.
+
+Sem licenca ativa: escolha um plano ou aguarde a liberacao do seu periodo de teste.","ok");await heartbeat();timer=setInterval(heartbeat,30000);return}setStatus("Conta criada com sucesso. Clique em Entrar para acessar.","ok");setAuthMode("login");return}setStatus("Entrando...");const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.access_token){setStatus("E-mail ou senha invalidos.","bad");return}accessToken=j.access_token;refreshToken=j.refresh_token||null;document.getElementById("password").value="";loginBox.classList.add("hidden");onlineBox.classList.remove("hidden");account.textContent=email;await heartbeat();timer=setInterval(heartbeat,30000)};async function createCheckout(plan){if(!accessToken){setStatus("Faca login primeiro.","bad");return}setStatus("Criando pagamento InfinitePay...");let r=await fetch("/api/checkout/create",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({plan})});if(r.status===401&&await refresh())r=await fetch("/api/checkout/create",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({plan})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.checkout_url){setStatus("Nao foi possivel abrir o pagamento.","bad");return}location.href=j.checkout_url}document.getElementById("payMonthly").onclick=()=>createCheckout("monthly");document.getElementById("payAnnual").onclick=()=>createCheckout("annual");document.getElementById("logout").onclick=()=>{accessToken=null;refreshToken=null;if(timer)clearInterval(timer);timer=null;onlineBox.classList.add("hidden");loginBox.classList.remove("hidden");setStatus("Sessao encerrada.")};
 </script></body></html>`);
 });
 
